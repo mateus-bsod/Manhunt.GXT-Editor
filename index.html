@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GXT EDITOR</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  position:relative;
+  color:#e0e0e0;
+  font-family:Tahoma, Arial, sans-serif;
+  font-size:12px;
+  background:#000;
+}
+
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  background:
+    linear-gradient(
+      rgba(0,0,0,.70),
+      rgba(0,0,0,.85)
+    ),
+    url("https://wallpapercave.com/wp/wp7668648.jpg");
+  background-size:cover;
+  background-position:center;
+  filter:grayscale(100%);
+  z-index:-1;
+}
+
+.page{
+  max-width:1100px;
+  margin:20px auto;
+  min-height:95vh;
+  border:1px solid #202020;
+  background:rgba(151, 151, 151, 0.585);
+}
+
+.wrap{padding:16px;}
+h1{
+  font-size:22px;
+  color:#cfcfcf;
+  margin-bottom:12px;
+  text-transform:uppercase;
+  letter-spacing:4px;
+}
+.main{display:flex;min-height:650px;gap:10px;}
+.col{
+  background:rgba(15,15,15,.75);
+  border:1px solid #2a2a2a;
+  padding:10px;
+}
+.col-left{flex:1.4;}
+.col-right{flex:1;}
+.toolbar,.actions{display:flex;gap:6px;margin-bottom:8px;}
+input[type="text"], textarea{
+  background:#0b0b0b;
+  border:1px solid #101010;
+  color:#ddd;
+  padding:8px;
+}
+input[type="text"]{flex:1;}
+textarea{
+  width:100%;
+  min-height:420px;
+  resize:none;
+}
+button,.filebtn{
+  background:linear-gradient(#1a1a1a,#0c0c0c);
+  border:1px solid #101010;
+  color:#ddd;
+  padding:8px 10px;
+  cursor:pointer;
+}
+button:disabled{opacity:.4;cursor:default;}
+.filebtn{position:relative;overflow:hidden;}
+.filebtn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
+table{width:100%;border-collapse:collapse;font-size:11px;}
+thead th{
+  background:#101010;
+  border:1px solid #202020;
+  padding:6px;
+}
+tbody td{
+  border:1px solid #222;
+  padding:5px;
+}
+tbody tr{cursor:pointer;}
+tbody tr:hover{background:#1a1010;}
+tbody tr.sel{
+  background:#fff;
+  color:#fff;
+}
+.list{
+  max-height:590px;
+  overflow:auto;
+  border:1px solid #101010;
+}
+.meta{
+  margin-bottom:10px;
+  color:#303030;
+}
+.statusbar{
+  margin-top:10px;
+  padding:8px 10px;
+  border:1px solid #303030;
+  display:flex;
+  justify-content:space-between;
+  background:#101010;
+}
+</style>
+</head>
+<body>
+
+<div class="page">
+<div class="wrap">
+
+<div style="text-align:center;margin-bottom:14px;">
+  <img src="https://raw.githubusercontent.com/mateus-bsod/Manhunt.GXT-Editor/main/gxt_logo.png"
+       alt="GXT Logo"
+       style="max-width:420px;width:100%;height:auto;">
+</div>
+
+<div class="main">
+
+<div class="col col-left">
+  <div class="toolbar">
+    <label class="filebtn">
+      OPEN .GXT
+      <input type="file" id="fileInput" accept=".gxt,*">
+    </label>
+    <input type="text" id="search" placeholder="search" disabled>
+    <button id="clearBtn" disabled>CLEAR</button>
+  </div>
+  <div class="list">
+    <table>
+      <thead>
+        <tr><th class="id">ID</th><th class="key">KEY</th><th>TEXT</th></tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="col col-right">
+  <div class="meta">KEY: <span id="metaKey">-</span> &nbsp; ID: <span id="metaId">-</span></div>
+  <textarea id="editor" placeholder="select a row from the list" spellcheck="false"></textarea>
+  <div class="actions">
+    <button id="saveBtn" disabled>SAVE CHANGES</button>
+    <button id="exportBtn" disabled>EXPORT FILE</button>
+  </div>
+</div>
+
+</div>
+
+<div class="statusbar">
+  <span id="statusMain">no file loaded</span>
+  <span id="count">0 strings</span>
+</div>
+
+</div>
+</div>
+
+<script>
+(function(){
+  let strings = [];
+  let currentIdx = null;
+  let fileName = "file.gxt";
+
+  const tbody = document.getElementById('tbody');
+  const search = document.getElementById('search');
+  const clearBtn = document.getElementById('clearBtn');
+  const fileInput = document.getElementById('fileInput');
+  const statusMain = document.getElementById('statusMain');
+  const countEl = document.getElementById('count');
+  const metaKey = document.getElementById('metaKey');
+  const metaId = document.getElementById('metaId');
+  const editor = document.getElementById('editor');
+  const saveBtn = document.getElementById('saveBtn');
+  const exportBtn = document.getElementById('exportBtn');
+
+  const KEY_RE = /^[A-Z][A-Z0-9_]{1,15}$/;
+  const VALID_CHARS_RE = /^[A-Za-z0-9áéíóúâêôãõçÁÉÍÓÚÂÊÔÃÕÇ\s.,!?;:()\[\]{}"'~@#$%&*+\-=<>/\\|]+$/;
+  const CLEAN_RE = /[^\wáéíóúâêôãõçÁÉÍÓÚÂÊÔÃÕÇ\s.,!?;:()\[\]{}"'~@#$%&*+\-=<>/\\|]/g;
+
+  function isValidText(s){
+    if(!s || s.length < 2) return false;
+    if(!VALID_CHARS_RE.test(s)){
+      let valid = 0;
+      for(const c of s){ if(VALID_CHARS_RE.test(c)) valid++; }
+      if(valid < s.length * 0.8) return false;
+    }
+    if(s.length < 3) return false;
+    if(!/[a-zA-Z\s]/.test(s)) return false;
+    return true;
+  }
+
+  function decodeUTF16LE(bytes, offset){
+    let out = '';
+    for(let i = 0; i < (bytes.length - offset) / 2; i++){
+      out += String.fromCharCode(bytes[offset + i*2] | (bytes[offset + i*2 + 1] << 8));
+    }
+    return out;
+  }
+
+  function parseGXT(bytes){
+    let text;
+    if(bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE){
+      text = decodeUTF16LE(bytes, 2);
+    } else {
+      text = decodeUTF16LE(bytes, 0);
+    }
+
+    const raw = text.split('\x00');
+    const out = [];
+    let currentKey = null;
+
+    for(const s of raw){
+      if(!s) continue;
+      if(KEY_RE.test(s) && s.length <= 16){
+        currentKey = s;
+      } else {
+        if(isValidText(s)){
+          const key = currentKey ? currentKey : `TEXT_${out.length}`;
+          const clean = s.replace(CLEAN_RE, '');
+          if(clean.trim()){
+            out.push({ id: out.length, key: key, value: clean });
+          }
+        }
+        currentKey = null;
+      }
+    }
+    return out;
+  }
+
+  function exportGXT(){
+    const parts = [];
+    strings.forEach(s => { parts.push(s.key); parts.push(s.value); });
+    const finalText = parts.join('\x00') + '\x00\x00';
+
+    const buf = new ArrayBuffer(2 + finalText.length * 2);
+    const view = new DataView(buf);
+    view.setUint8(0, 0xFF);
+    view.setUint8(1, 0xFE);
+    for(let i = 0; i < finalText.length; i++){
+      view.setUint16(2 + i*2, finalText.charCodeAt(i), true);
+    }
+    return new Uint8Array(buf);
+  }
+
+  function render(filter){
+    tbody.innerHTML = '';
+    const term = (filter || '').toLowerCase();
+
+    strings.forEach(s => {
+      if(term && !s.value.toLowerCase().includes(term) && !s.key.toLowerCase().includes(term)) return;
+
+      const tr = document.createElement('tr');
+      if(s.id === currentIdx) tr.classList.add('sel');
+
+      const tdId = document.createElement('td');
+      tdId.className = 'id';
+      tdId.textContent = s.id;
+
+      const tdKey = document.createElement('td');
+      tdKey.className = 'key';
+      tdKey.textContent = s.key;
+
+      const tdVal = document.createElement('td');
+      tdVal.textContent = s.value.slice(0,150).replace(/\n/g,' ').replace(/\r/g,'');
+
+      tr.append(tdId, tdKey, tdVal);
+      tr.addEventListener('click', () => select(s.id));
+      tbody.appendChild(tr);
+    });
+
+    countEl.textContent = strings.length + ' strings';
+  }
+
+  function select(idx){
+    currentIdx = idx;
+    const s = strings[idx];
+    metaKey.textContent = s.key;
+    metaId.textContent = idx;
+    editor.value = s.value;
+    saveBtn.disabled = false;
+    render(search.value);
+  }
+
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    fileName = file.name;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const bytes = new Uint8Array(ev.target.result);
+      strings = parseGXT(bytes);
+      currentIdx = null;
+
+      render('');
+      statusMain.textContent = fileName + ' loaded';
+
+      search.disabled = false;
+      clearBtn.disabled = false;
+      exportBtn.disabled = false;
+      saveBtn.disabled = true;
+
+      editor.value = '';
+      metaKey.textContent = '-';
+      metaId.textContent = '-';
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  search.addEventListener('input', () => render(search.value));
+
+  clearBtn.addEventListener('click', () => {
+    search.value = '';
+    render('');
+  });
+
+  saveBtn.addEventListener('click', () => {
+    if(currentIdx === null) return;
+    strings[currentIdx].value = editor.value;
+    statusMain.textContent = 'changes saved';
+    render(search.value);
+  });
+
+  exportBtn.addEventListener('click', () => {
+    if(strings.length === 0) return;
+    const data = exportGXT();
+    const blob = new Blob([data], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const base = fileName.replace(/\.gxt$/i, '');
+    a.href = url;
+    a.download = base + '_modified.gxt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    statusMain.textContent = 'exported: ' + base + '_modified.gxt';
+  });
+
+})();
+</script>
+
+</body>
+</html>
